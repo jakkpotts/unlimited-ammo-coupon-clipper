@@ -43,4 +43,40 @@ class ClipCouponsRequest(BaseModel):
                     "password": "password123"
                 }
             }
+        }
+
+class StoreCreate(BaseModel):
+    name: str
+    base_url: HttpUrl
+    login_url: HttpUrl
+    credentials: StoreCredentials
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Kroger",
+                "base_url": "https://www.kroger.com",
+                "login_url": "https://www.kroger.com/signin",
+                "credentials": {
+                    "email": "user@example.com",
+                    "password": "password123"
+                }
+            }
+        }
+
+class StoreResponse(BaseModel):
+    id: int
+    name: str
+    base_url: HttpUrl
+    login_url: HttpUrl
+    
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "name": "Kroger",
+                "base_url": "https://www.kroger.com",
+                "login_url": "https://www.kroger.com/signin"
+            }
         } 

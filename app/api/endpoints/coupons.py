@@ -5,8 +5,8 @@ from app.services.coupon_service import DynamicCouponService
 from app.services.store_discovery import StoreDiscoveryService
 from app.db.base import get_db
 from app.db.models.store import Store
-from app.db.models.user import User
-from sqlalchemy import select
+from app.db.models.user import User, user_stores
+from sqlalchemy import select, and_
 from typing import Dict, Any, List
 from app.api.deps import get_current_active_user
 
@@ -106,25 +106,34 @@ async def list_stores(
 @router.post("/{store_id}/clip", response_model=Dict[str, Any])
 async def clip_store_coupons(
     store_id: int,
+    clip_request: ClipCouponsRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
     """Clip all available coupons for a store"""
-    # Verify user has access to store
-    store = next((s for s in current_user.stores if s.id == store_id), None)
+    # Verify user has access to store using async query
+    query = select(Store).join(user_stores).where(
+        and_(
+            user_stores.c.user_id == current_user.id,
+            user_stores.c.store_id == store_id
+        )
+    )
+    result = await db.execute(query)
+    store = result.scalar_one_or_none()
+    
     if not store:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Store not found or access denied"
         )
     
-    # Create store config from store and credentials
+    # Create store config from store and provided credentials
     store_config = StoreConfig(
         id=store.id,
         name=store.name,
         base_url=store.base_url,
         login_url=store.login_url,
-        credentials=store.credentials  # This should be provided in the request or stored securely
+        credentials=clip_request.credentials
     )
     
     # Initialize coupon service and clip coupons
@@ -141,20 +150,26 @@ async def clip_store_coupons(
 
 @router.post("/clip-all", response_model=Dict[str, Any])
 async def clip_all_stores_coupons(
+    clip_request: ClipCouponsRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
     """Clip coupons for all user's stores"""
+    # Get all stores for the user
+    query = select(Store).join(user_stores).where(user_stores.c.user_id == current_user.id)
+    result = await db.execute(query)
+    stores = result.scalars().all()
+    
     results = []
     coupon_service = DynamicCouponService()
     
-    for store in current_user.stores:
+    for store in stores:
         store_config = StoreConfig(
             id=store.id,
             name=store.name,
             base_url=store.base_url,
             login_url=store.login_url,
-            credentials=store.credentials  # This should be provided in the request or stored securely
+            credentials=clip_request.credentials
         )
         
         result = await coupon_service.clip_coupons(store_config, current_user.id)
